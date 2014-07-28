@@ -1,20 +1,198 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html>
-    <head>
-    <title> market mapper </title>
-    <script type="text/javascript" src="mapper.js"></script>
-    </head>
-    
-    <body>
-        <canvas id="marketmap" width="300" height="300" style="border:1px solid #d3d3d3;">
-        Your browser does not support the HTML5 canvas tag.
-        </canvas>
-        <script>
-            setVal(50);
-            drawMap(); 
-        </script>
-    </body>
+<head>
+<script type="text/javascript" src="https://www.google.com/jsapi"></script>
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script type="text/javascript">
+
+var tickerList = [ ['A17U.SI','REIT'],
+    ['BN4.SI','ENGINEERING'],
+    ['C07.SI', 'AUTO']];
+var stockCount = 0;
+var stockQuote = {};
+var stockList = [];
+var tickerMap = {};
+var fillCount = 0;
+
+function fillStockData(quote)
+{
+    var ind = tickerMap[quote.Symbol];
+    stockList[ind].Volume = parseFloat(quote.Volume);
+    stockList[ind].Change = parseFloat(quote.Change);
+    stockQuote[quote.Symbol] = quote;
+    fillCount++;
+}
+
+function checkFillCount()
+{
+    return fillCount==stockCount;
+}
+
+//to account for the non-blocking behavior of JSON query
+function generateStockArray()
+{
+    console.log("generating stock data");
+    stockCount = tickerList.length;
+    for( i=0; i<stockCount; i++)
+    {
+        var stockData = {Symbol: tickerList[i][0], Type: tickerList[i][1], Volume:-1, Change:-1 };
+        stockList[i] = stockData;
+        tickerMap[tickerList[i][0]] = i;
+    }
+    for( i=0; i<stockCount; i++)
+    {
+        getStock({stock: tickerList[i][0] },'quotes', function(err, data)
+                {
+                fillStockData(data.quote);
+                });
+    }
+    waitfor(checkFillCount, 50, 0, "quote query", function(){drawChart();});
+
+}
+
+
+function drawChart() 
+{
+    console.log("draw chart");
+    var stockArray = [[]];
+    var count =0;
+    var typeVolume = {};
+    var typeChange = {};
+
+    for( i=0; i<stockCount; i++)
+    {
+        if(typeVolume[stockList[i].Type] == undefined)
+        {
+            typeVolume[stockList[i].Type] = stockList[i].Volume;
+            typeChange[stockList[i].Type] = stockList[i].Change;
+        }
+        else
+        {
+            typeVolume[stockList[i].Type] += stockList[i].Volume;
+            typeChange[stockList[i].Type] += stockList[i].Change;
+        }
+    }
+
+    //tally the counts
+   
+    stockArray[0] = ['Symbol','Type','Volume','Change'];
+    count = 2; //going to fill the global market
+    var globalVolume = 0;
+    var globalChange = 0;
+    for(var key in typeVolume)
+    {
+        stockArray[count] = [key, 'GLOBAL', typeVolume[key], typeChange[key]];
+        globalVolume += typeVolume[key];
+        globalChange += typeChange[key];
+        count++;
+    }
+    stockArray[1] = ['GLOBAL',null, globalVolume, globalChange];
+
+    for( i=0; i<stockCount; i++)
+    {
+        stockArray[i+count] = [stockList[i].Symbol, stockList[i].Type, stockList[i].Volume, stockList[i].Change];
+    }
+    for( i=0; i<stockArray.length; i++)
+    {
+        console.log(stockArray[i]);
+    }
+    // Create and populate the data table.
+    var data = google.visualization.arrayToDataTable(stockArray);
+    // Create and draw the visualization.
+    var tree = new google.visualization.TreeMap(document.getElementById('chart_div'));
+    tree.draw(data, {
+minColor: '#f00',
+midColor: '#ddd',
+maxColor: '#0d0',
+headerHeight: 15,
+fontColor: 'black',
+showScale: true,
+maxDepth: 2,
+showTooltips: true,
+title: 'SimpleMapper by hhchin87@gmail.com'
+});
+
+}
+
+
+
+/****
+  Yahoo Finance stock historical data, prices and details retrieval function written in Javascript, jQuery and YQL
+  v2013-08-05
+  (c) 2013 by Fincluster ltd - http://fincluster.com <dev@fincluster.com>
+ ****/
+(function($) {
+ function getStock(opts, type, complete) {
+ var defs = {
+desc: false,
+baseURL: 'http://query.yahooapis.com/v1/public/yql?q=',
+query: {
+quotes: 'select * from yahoo.finance.quotes where symbol = "{stock}" | sort(field="{sortBy}", descending="{desc}")',
+historicaldata: 'select * from yahoo.finance.historicaldata where symbol = "{stock}" and startDate = "{startDate}" and endDate = "{endDate}"'
+},
+suffixURL: {
+quotes: '&env=store://datatables.org/alltableswithkeys&format=json&callback=?',
+historicaldata: '&env=store://datatables.org/alltableswithkeys&format=json&callback=?'
+}
+};
+
+opts = opts || {};
+
+if (!opts.stock) {
+complete('No stock defined');
+return;
+}
+
+var query = defs.query[type]
+.replace('{stock}', opts.stock)
+.replace('{sortBy}', defs.sortBy)
+.replace('{desc}', defs.desc)
+.replace('{startDate}', opts.startDate)
+.replace('{endDate}', opts.endDate)
+
+var url = defs.baseURL + query + (defs.suffixURL[type] || '');
+$.getJSON(url, function(data) {
+        var err = null;
+        if (!data || !data.query) {
+        err = true;
+        }
+        complete(err, !err && data.query.results);    });
+}
+window.getStock = getStock;
+})(jQuery);
+
+
+function waitfor(test,  msec, count, source, callback) {
+    // Check if condition met. If not, re-check later (msec).
+    while (!test()) {
+        count++;
+        setTimeout(function() {
+                waitfor(test, msec, count, source, callback);
+                }, msec);
+        return;
+    }
+    // Condition finally met. callback() can be executed.
+    callback();
+}
+
+
+</script>
+
+
+<script type="text/javascript">
+    console.log("entry point");
+    google.load("visualization", "1", {packages:["treemap"]});
+    google.setOnLoadCallback(generateStockArray());
+</script>
+
+
+</head>
+
+<body>
+<div id="chart_div" style="width: 900px; height: 500px;"></div>
+<div id="quote"> </div>
+
+
+</body>
 </html>
-
-
 
